@@ -397,6 +397,39 @@ case. No agent generation or outgoing email in that first intake increment.
 Mailbox permission and actual trigger behavior remain unverified. Keep
 versioned answers, evidence, and append-only feedback separate from RequestText.
 
+## Sprint and backlog
+
+| Priority | Item | Status |
+| --- | --- | --- |
+| Current | Confirm/create case-register columns, then registration-only shared-mailbox intake. | Resume here next session; column completion unconfirmed. |
+| Later | Internal-recipient directory enrichment for job title/department and explicit business-role mapping. | Backlog; requested November 3, 2026. Not implemented or tenant-tested; does not block current intake work. |
+
+### Backlog: internal-recipient directory enrichment
+
+Use the standard Office 365 Users connector's **Get user profile (V2)** action
+to look up internal recipients when processing a case, rather than polling or
+copying the entire Global Address List. Request only needed profile fields,
+such as job title and department, through existing permitted connections.
+
+Acceptance criteria:
+
+- Prove lookup under the actual connection identity without new admin consent
+  or bypassing tenant policy; report a policy/access blocker explicitly.
+- Resolve individuals reliably. Handle aliases, distribution lists, and shared
+  mailboxes explicitly; do not assume every recipient is an individual user.
+- Record directory provenance and retrieval time. Treat missing, ambiguous, or
+  potentially stale role information as unknown/unverified; distinguish lookup
+  failure from an empty profile field.
+- Use maintained mappings or approved rules for business categories such as
+  architect, seller, or BDM. Do not present an AI guess from a title as fact.
+- Do not infer review authority, access rights, or send permissions from a job
+  title or department. Keep authorization checks/rosters separate.
+- Keep personal directory results out of source control; commit only sanitized
+  configuration, mappings without personal data, and documented outcomes.
+
+Reference: [Office 365 Users connector](https://learn.microsoft.com/en-us/connectors/office365users/).
+Documented capability was reviewed November 3, 2026; tenant execution is unproven.
+
 ## Remaining sequence and open decisions
 
 After the completed connectivity tests:
