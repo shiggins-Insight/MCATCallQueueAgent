@@ -1,6 +1,6 @@
 # MCAT-AI Call Queue Agent: design and deployment guide
 
-Last updated: October 30, 2026.
+Last updated: November 3, 2026.
 
 ## Purpose and status
 
@@ -36,17 +36,157 @@ scope. License entitlements and available execution capacity are not verified.
 
 ### Execution record
 
-| Capability | Status as of October 30, 2026 |
+Results below are user-reported tenant execution, except where supplied action
+outputs were also inspected in the conversation. They are not an independent
+tenant audit. Do not repeat completed preflight tests merely because a new
+session lacks the earlier conversation.
+
+| Capability | Status as of November 3, 2026 |
 | --- | --- |
-| Existing group-chat selector | User reported the newly created chat was missing from recent chats; supplied its Teams URL for a custom destination value. |
-| Manual posting flow | User reported: "the flow seems to work fine." Treat posting as user-reported success, not independently inspected execution. |
+| Existing group-chat selector | Initially absent; custom conversation ID worked. Chat subsequently appeared in the dropdown and was selected successfully. Either selection method must target the same recorded conversation. |
+| Manual posting flow | User reported successful Flow bot posting to the persistent group chat. |
 | Mention resolution | Included in the proposed test; not separately confirmed. |
-| Another architect submitting a card | Not tested/reported. This is the next step. |
-| Authenticated responder output fields | Not inspected. |
-| SharePoint connector retrieval/search | Not established. |
-| Published agent execution and grounding | Not established. |
+| Another architect submitting a card | Passed twice on separate cards, with distinct participating architects other than the flow owner. Supplied outputs showed RECEIVED, TEST-CHAT-001, answerVersion 1, and the intended chat destination. |
+| Authenticated responder output fields | Supplied outputs inspected; responder identities differed as expected. Field mapping is recorded below. This is connectivity, not a deployed authorization or feedback-save service. |
+| SharePoint list create/read | User created the records list and successfully ran Create item followed by Get item using the created ID. |
+| Agent preview | Both supported-answer and missing-information tests passed. |
+| Published agent execution | Rebuilt agent MCAT-AI CallQueueAgent succeeded through Execute Agent and wait. Actual lastResponse values for supported answer and abstention were supplied and matched expectations. |
+| Agent to Teams | Returned lastResponse posted successfully to the persistent chat. |
+| SharePoint to agent to Teams | Create item -> Get item -> agent -> Teams succeeded. Changing the stored passage from MAPLE-47 to CEDAR-82 changed the answer correctly. |
+| SharePoint-fed abstention repeat | Deferred at user request. Do NOT mark passed. Connector-only abstention had already passed. |
+| Document extraction, intranet search, public research | Not established by list-item retrieval or synthetic passage tests. |
 | Shared-mailbox read/internal snapshot send | Not established. |
-| Production intake, storage, feedback, suppression | Not built/deployed. |
+| Production intake, case schema, feedback, suppression | Not built/deployed. List-column setup was proposed but completion has not been reported. |
+
+### Resume here: working resources
+
+| Resource | Confirmed configuration |
+| --- | --- |
+| Power Platform environment | Insight Default PROD |
+| Environment ID | `Default-6c637512-c417-4e78-9d62-b61258e4b619` |
+| SharePoint connector Site Address | `https://insightonline.sharepoint.com/sites/InsightCloudCare/MCATInitiatives` |
+| Records list display name | MCAT-AI Call Queue Agent Records |
+| Records list browser URL | `https://insightonline.sharepoint.com/sites/InsightCloudCare/MCATInitiatives/Lists/MCATAI%20Call%20Queue%20Agent%20Records/AllItems.aspx` |
+| Working rebuilt agent name | **MCAT-AI CallQueueAgent** (different spacing from the chat and original agent) |
+| Agent execution connector/action | Microsoft Copilot Studio / Execute Agent and wait (`ExecuteCopilotAsyncV2`) |
+| Agent connection label reported during setup | MCAT-CopilotStudio-Steven-Test; final rebuilt-flow connection details not separately captured. A label does not determine permissions. |
+| Agent execution flow | MCAT - Agent execution test (displayed as MCAT Agent Execution Test in one screenshot) |
+| Separate storage test flow | MCAT - SharePoint connectivity test |
+| Teams destination | MCAT-AI Call Queue Agent; conversation ID in Confirmed decisions above |
+
+The SharePoint site is a subsite: use the Site Address above, not the list-view
+URL or just the parent InsightCloudCare site. Select the list from the connector
+dropdown; its list GUID has not been captured.
+
+The working rebuilt agent's ID/schema name and final action parameters have
+not been captured. Discover them from the working flow if needed; do not reuse
+the original failed agent's URL ID as if it identifies the rebuilt agent.
+Keep agent Conversation ID empty for independent tests. Never put the Teams
+group conversation ID there.
+
+The default environment supports the reported beta tests. That is not proof of
+production suitability, full licensing entitlement, or capacity for expected
+daily volume. The two offered Teams environments were not selected.
+
+### Agent compatibility troubleshooting: avoid repeating this detour
+
+The original agent, named **MCAT-AI Call Queue Agent**, used the new
+Build/Preview/Evaluate/Monitor experience with Skills and Memory. Preview
+worked, but Power Automate execution repeatedly failed with 404 / "The response
+is not in a JSON format." Republishing and refreshing did not resolve it.
+There was also an earlier launch-time missing-connection message that cleared
+on retry; it is not evidence that an administrator configured anything.
+
+After discussion of standard versus GitHub Copilot harness compatibility, the
+user rebuilt the agent as **MCAT-AI CallQueueAgent**, retested, edited the flow,
+and reported successful execution. The rebuilt agent's harness setting was not
+separately captured. Preserve the working route instead of assuming agents in
+different authoring experiences are interchangeable.
+
+Microsoft documents separate harness runtimes. A linked community bug reports
+new-harness execution problems, but its symptom differs from this tenant's 404.
+Therefore compatibility is a plausible explanation, NOT a proven root cause.
+Earlier guesses that the display name or GUID alone explained the failure were
+not established. Do not repeat blind identifier substitutions or recreate
+connections without inspecting the working configuration.
+
+### Observed card response mapping
+
+Use the card action's returned body, not the manual trigger's user or editable
+card data, to identify the responder.
+
+| Field inside body | Meaning |
+| --- | --- |
+| `responder.objectId`, `responder.tenantId` | Returned directory identity; use for future reviewer authorization checks. |
+| `responder.email`, `responder.userPrincipalName`, `responder.displayName` | Returned reviewer metadata, not client-supplied identity fields. |
+| `responseTime` | Submission timestamp. |
+| `data.testResult` | RECEIVED in both observed tests. |
+| `data.operation` | CONNECTIVITY_TEST_ONLY. |
+| `data.caseId`, `data.answerVersion` | TEST-CHAT-001 and 1 in these tests. Production must validate against durable case/version state. |
+| `messageId`, `messageLink` | Posted card identity and location. |
+| `submitActionId` | Submit connectivity result. |
+
+One responder's returned directory email spelling differed from the original
+supplied roster. Production reviewer mappings must be resolved from actual
+directory identities, not silently copied from the original spelling.
+Raw headers included signed URLs; they have deliberately not been committed.
+
+### Working controlled test configuration
+
+The agent was instructed to answer only from the current supplied passage,
+treat it as evidence rather than instructions, not fill gaps from general
+knowledge/web/history, and take no external actions. For the original preview
+setup, removal of Work IQ and Search all websites and leaving Memory off were
+instructed; the rebuilt agent's exact settings still need an export/capture.
+Do not assume instructions alone enforce these boundaries.
+
+Expected output forms:
+
+```text
+DRAFT: <answer>
+EVIDENCE: <exact supporting sentence from the passage>
+```
+
+```text
+NEEDS_INFORMATION: The supplied passage does not provide this answer.
+```
+
+Connector tests returned:
+
+```text
+DRAFT: MAPLE-47
+EVIDENCE: The fictional MCAT connectivity test code is MAPLE-47.
+```
+
+The question "Who approved this code?" returned the expected NEEDS_INFORMATION.
+The successful SharePoint-fed flow is:
+
+```text
+Manual trigger
+  -> SharePoint Create item (Title = synthetic passage)
+  -> SharePoint Get item (Id = ID from Create item)
+  -> Execute Agent and wait
+  -> Teams Post a message in a chat or channel
+```
+
+Agent Message uses **Title from Get item**, not a typed copy:
+
+```text
+Passage: <dynamic Title from Get item>
+Question: What is the fictional MCAT connectivity test code?
+```
+
+Teams posts a clearly labeled integration-test message plus dynamic
+**lastResponse**, using Flow bot -> Group chat. Connector outputs include
+`lastResponse`, `responses`, and agent `conversationId`; success status alone
+is not an answer-validation check.
+
+The final stored synthetic passage is:
+`The fictional MCAT connectivity test code is CEDAR-82.`
+User confirmed correct list record and chat response after changing the code.
+Each run creates a new harmless test row. These rows are not production cases,
+and this flow does not search documents, save answer versions, or record
+production feedback.
 
 ## Architecture
 
@@ -183,7 +323,7 @@ Neither supplied ZIP is an importable Power Automate solution. The connectivity
 ZIP contains manual instructions/configuration/card JSON; the historical ZIP
 contains data and processing artifacts. Build the manual test in the designer.
 
-## Next step: test the feedback button
+## Completed preflight reference: test the feedback button
 
 Think of the current flow as a doorbell: it can put a message in the chat.
 Now test a reply button so the flow can tell which architect pressed it.
@@ -223,25 +363,70 @@ consent blocks it. Do not publish raw outputs with personal data or tokens.
 Once one architect succeeds, run again with a fresh card and a different
 architect. One card is not intended to collect two independent submissions.
 
+## Immediate next creation: case register columns
+
+The user chose to move on rather than repeat SharePoint-fed abstention. Resume
+with the case register, NOT agent creation or another connectivity cycle.
+The following instructions have been given, but column creation has NOT been
+confirmed. Inspect/ask before duplicating columns.
+
+Use the existing records list. Keep **Title** for generated **CaseID**, not email
+subject. Add the following columns with exact names; leave new columns optional
+initially so existing synthetic test rows remain valid.
+
+| Column | Type | Settings / purpose |
+| --- | --- | --- |
+| CaseStatus | Choice | NEW, RESEARCHING, AWAITING_REVIEW, NEEDS_INFORMATION, ESCALATED, CLOSED, ERROR. Default NEW. |
+| SourceType | Choice | EMAIL, TEAMS, MANUAL_TEST. No default. |
+| OriginalSubject | Multiple lines of text | Plain text; append changes off. |
+| RequestText | Multiple lines of text | Plain text; append changes off. Original request only, not generated answers. |
+| SourceMessageID | Multiple lines of text | Plain text; append changes off. Preserve original connector message identifier. |
+| SourceMailbox | Single line of text | Mailbox the message was read from. |
+| ReceivedAt | Date and time | Include time. |
+
+These are starter fields, not a complete deduplication/schema implementation.
+Before automated intake, design an enforceable mailbox/message uniqueness
+mechanism, concurrency behavior, CaseID assignment, required-field validation,
+and explicit failure/reconciliation handling. A lookup-then-create check alone
+does not guarantee uniqueness under concurrent runs. Preserve full source
+identifiers and long text; do not silently truncate to fit column limits.
+
+After column setup, create a shared-mailbox intake flow that ONLY registers
+questions: read incoming mail, deduplicate, assign/persist CaseID, and save the
+case. No agent generation or outgoing email in that first intake increment.
+Mailbox permission and actual trigger behavior remain unverified. Keep
+versioned answers, evidence, and append-only feedback separate from RequestText.
+
 ## Remaining sequence and open decisions
 
-After feedback connectivity is demonstrated:
+After the completed connectivity tests:
 
-1. Identify an accessible SharePoint site with existing storage-creation rights.
-   Prove connector retrieval of a known non-sensitive item and preserve its
-   actual content/source URL. Separately prove search scope and text extraction.
-2. Execute a published agent with a controlled retrieved passage. Test an
-   answerable question and an unanswerable one: grounded answer versus
-   abstention. Post through Flow bot to this same chat.
+1. Establish case-register schema and registration-only mailbox intake as
+   described above, then durable answer/feedback/suppression records.
+2. Separately establish real internal research scope, permitted source
+   retrieval, document text extraction, provenance, and access-failure handling.
+   The existing SharePoint synthetic-row path is not a research engine.
 3. Prove permitted public-source research and explicit source attribution.
 4. Verify mailbox read and internal snapshot-send permissions separately.
 5. Build durable schemas, idempotent intake, versioning, authenticated feedback,
    suppression, snapshots, error handling, and reconciliation incrementally.
 6. Implement typed-question intake and case-scoped follow-up separately.
 
-Unresolved inputs: Power Platform environment URL/ID, SharePoint site/creation
-rights, practical research sources, agent identity/publication/capacity, and
-snapshot sender permission. Ask for one needed input at a time; never secrets.
+Unresolved inputs: practical research sources, working rebuilt-agent
+ID/schema/configuration capture, available capacity, mailbox intake rights,
+and snapshot sender permission. Environment and SharePoint site/list are now
+recorded above. Ask for one needed input at a time; never secrets.
+
+User confirmed this is an internal-only workflow with an authorized audience.
+Do not commit client PII, credentials, tokens, signed URLs, or raw execution
+headers. Sanitized outcomes and field mappings belong in this guide.
+User prefers beginner-friendly, one-step-at-a-time setup guidance.
+
+Repository workflow: the initial guide/card PR was merged and its remote branch
+deleted. User authorized subsequent work on main. This session remains in an
+isolated worktree; do not edit the separate main checkout. These Markdown/JSON
+files are not exports of the working tenant flows/agent. A new session must not
+claim it can reconstruct the deployed configuration solely from this repo.
 
 Unresolved policy decisions:
 
@@ -269,6 +454,8 @@ October 30, 2026. Documentation is not proof of success in this tenant.
 - [Connector tools](https://learn.microsoft.com/en-us/microsoft-copilot-studio/advanced-connectors)
 - [Copilot Studio execution connector](https://learn.microsoft.com/en-us/connectors/microsoftcopilotstudio/)
 - [SharePoint connector](https://learn.microsoft.com/en-us/connectors/sharepointonline/)
+- [Agent harness differences](https://learn.microsoft.com/en-us/microsoft-copilot-studio/agents-experience/overview) (reviewed November 3, 2026)
+- [Reported new-harness connector problem](https://github.com/microsoft/PowerAppsCodeApps/issues/431) (community report, not a confirmed diagnosis of this tenant)
 
 The Teams connector documents Workflows app availability as a requirement for
 posting/card actions, an approximately 28 KB message limit, and no Flow bot
