@@ -1,0 +1,55 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.2",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "MCAT-AI | Shared-chat connectivity test",
+      "weight": "Bolder",
+      "size": "Medium",
+      "wrap": true
+    },
+    {
+      "type": "FactSet",
+      "facts": [
+        {"title": "Case", "value": "TEST-CHAT-001"},
+        {"title": "Version", "value": "1"},
+        {"title": "Purpose", "value": "Connectivity only; not a researched answer"}
+      ]
+    },
+    {
+      "type": "TextBlock",
+      "text": "Any participating MCAT architect may submit this test. The first accepted submission closes this card. No knowledge or suppression state will be changed.",
+      "wrap": true
+    },
+    {
+      "type": "Input.ChoiceSet",
+      "id": "testResult",
+      "style": "expanded",
+      "value": "RECEIVED",
+      "choices": [
+        {"title": "I received this in the shared group chat", "value": "RECEIVED"},
+        {"title": "I received it, but observed a problem", "value": "PROBLEM"}
+      ]
+    },
+    {
+      "type": "Input.Text",
+      "id": "comments",
+      "placeholder": "Optional description of the observed problem",
+      "isMultiline": true,
+      "maxLength": 2000
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Submit",
+      "title": "Submit connectivity result",
+      "data": {
+        "operation": "CONNECTIVITY_TEST_ONLY",
+        "caseId": "TEST-CHAT-001",
+        "answerVersion": 1
+      }
+    }
+  ]
+}
