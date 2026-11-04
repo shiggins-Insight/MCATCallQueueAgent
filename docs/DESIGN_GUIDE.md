@@ -384,17 +384,18 @@ test rows remain valid.
 | SourceType | Choice | EMAIL, TEAMS, MANUAL_TEST. No default. |
 | OriginalSubject | Multiple lines of text | Plain text; append changes off. |
 | RequestText | Multiple lines of text | Plain text; append changes off. Original request only, not generated answers. |
-| SourceMessageID | Multiple lines of text | Plain text; append changes off. Preserve original connector message identifier. |
+| SourceMessageID | Single line of text (latest user-directed target; conversion pending) | Maximum 255 characters; enforce unique values. Store the original Message Id, explicitly capped if oversized. |
 | SourceMailbox | Single line of text | Mailbox the message was read from. |
 | ReceivedAt | Date and time | Include time. |
-| IntakeKey | Single line of text | Enforce unique values enabled. Initially optional for existing test rows. See the revised key decision below. |
+| IntakeKey | Existing single line of text; removal pending | Earlier duplicate test used this column. Remove only after SourceMessageID uniqueness is enabled and flow references are removed. |
 
 The current registration flow reads the shared mailbox, captures Message Id
 in Compose **SourceMessageId**, generates **NewCaseId** using
 `concat('MCAT-', guid())`, and saves a NEW / EMAIL case. RequestText receives
 the trigger's full Body, not Body Preview. Outlook supplied HTML including
 formatting/signature; that is preserved, not misinterpreted as plain text.
-Keep full SourceMessageID in its multiple-lines field.
+SourceMessageID was initially multiple lines of text. The latest decision below
+supersedes that design; do not recreate a second complete-ID column.
 
 The successful replay test used the earlier prefixed key (lowercase mailbox,
 separator, and Message Id). SharePoint rejected the duplicate and created no
@@ -403,28 +404,57 @@ key decision below.
 
 ### User-directed simplification: Message ID defines uniqueness
 
-On November 4, the user chose to remove the mailbox prefix and forego extra
-lookup/key-building steps for this single-mailbox beta. IntakeKey is now the
-existing indexed, unique storage column for **Message ID alone**, not a second
-business identity. Do not reintroduce a separate logical identifier, hash
-service, multi-column key, or mandatory pre-create lookup for this increment.
+On November 4, the user explicitly chose to change **SourceMessageID** to
+single-line text with unique values and remove **IntakeKey**. SourceMessageID
+is the only technical duplicate-prevention field for this single-mailbox beta.
+Do not reintroduce a separate key, full-ID column, mailbox prefix, hash service,
+multi-column key, or mandatory pre-create lookup for this increment.
 
 User explicitly accepts that truncation collisions could prevent a case and
-response from being created. The collision probability is not measured; do
-not describe it as proven negligible. The earlier SourceMessageId example
-had 152 characters and fits without truncation.
+response from being created. Keeping only the capped SourceMessageID also
+loses the stored suffix of an oversized original ID; the separate complete-ID
+column is no longer part of the design. The collision probability is not
+measured; do not describe it as proven negligible. The earlier SourceMessageId
+example had 152 characters and fits without truncation.
 
 Do not rely on SharePoint to silently truncate oversized values. Configure the
-Create item **IntakeKey** field directly with this Power Automate expression:
+Create item **SourceMessageID** field directly with this Power Automate expression:
 
 ```text
 substring(outputs('SourceMessageId'), 0, min(length(outputs('SourceMessageId')), 255))
 ```
 
-This deliberately caps only the uniqueness field. **SourceMessageID still
-preserves the complete original identifier** for provenance and troubleshooting.
-The column's unique constraint remains the concurrency backstop. Missing or
-invalid source IDs must fail visibly; do not substitute an empty key.
+The unique constraint remains the concurrency backstop. Missing or invalid
+source IDs must fail visibly; do not substitute an empty ID. **SourceMessageId**
+is the Compose action holding the trigger's Message Id; **SourceMessageID** is
+the SharePoint column. Keep the Compose action for the expression above.
+
+Migration steps (manual; completion NOT reported):
+
+1. Turn the intake flow off temporarily. Keep its test-subject filter.
+2. In SharePoint List settings -> Columns -> SourceMessageID, change the type
+   to Single line of text, maximum 255 characters. Check existing populated
+   test values before/after conversion; conversion can lose text beyond the
+   limit. If the setting is unavailable or fails, stop instead of deleting
+   and recreating the source column.
+3. Enable Enforce unique values on SourceMessageID and verify it succeeds.
+   SharePoint requires an index for uniqueness. If existing values prevent
+   enabling it, inspect the actual conflict; do not delete unrelated cases.
+4. Refresh the flow designer as needed to load the changed column type.
+   Apply the capped expression to SourceMessageID in Create item. Remove
+   IntakeKey from that action's selected parameters and all other references.
+5. Simplify the existing condition and remove BuildIntakeKey as described
+   below, without deleting NewCaseId/Create item. Save the flow.
+6. Only after the new constraint and mapping are in place, delete IntakeKey
+   through List settings. Refresh the flow's list schema if the deleted field
+   remains in the designer, verify other mappings, and save again.
+7. Turn the flow on, send a fresh correctly filtered test email, and confirm
+   one case is saved with SourceMessageID and no IntakeKey column. Resubmitting
+   that run should reject a duplicate SourceMessageID without creating a row.
+
+Existing SourceMessageID values already contain the unprefixed original IDs,
+so no mailbox-prefix rewrite is needed when they survive conversion unchanged.
+The earlier successful IntakeKey replay does not prove this new constraint.
 
 The separate BuildIntakeKey action and oversize-key rejection are no longer
 needed. Keep the existing condition as a missing-ID guard only, using
@@ -433,11 +463,6 @@ state that the message ID is missing. Keep NewCaseId/Create item in its True
 branch. If the earlier condition was not added, validate that the message ID
 is present before saving. Flow edits are manual and completion of this change
 has NOT been reported.
-
-Before testing replay with the revised key, migrate the existing prefixed test
-records: replace each IntakeKey with its corresponding complete SourceMessageID,
-capped using the same rule if necessary. Otherwise a replay would not match its
-old key. Do not overwrite source IDs, invent values, or delete unrelated cases.
 
 A duplicate or truncation collision may visibly fail Create item in this beta;
 it is not silently treated as success or proof of an identical email. Other
@@ -455,7 +480,7 @@ feedback separate from RequestText.
 
 | Priority | Item | Status |
 | --- | --- | --- |
-| Current | Simplify the existing unique IntakeKey to Message ID alone, migrate prefixed test keys, and continue registration-only mailbox intake. | Columns, registration, and duplicate rejection confirmed. Revised key expression not yet confirmed in tenant. |
+| Current | Convert SourceMessageID to unique single-line text, remove IntakeKey, and continue registration-only mailbox intake. | Earlier columns, registration, and IntakeKey duplicate rejection confirmed. New column conversion/constraint and flow mapping not yet confirmed. |
 | Later | RequestPlainText derived from preserved HTML; mailbox reconciliation and visible failure recovery. | Not implemented. Text conversion and signature handling are separate from preservation of the original request. |
 | Later | Internal-recipient directory enrichment for job title/department and explicit business-role mapping. | Backlog; requested November 3, 2026. Not implemented or tenant-tested; does not block current intake work. |
 
@@ -489,7 +514,7 @@ Documented capability was reviewed November 3, 2026; tenant execution is unprove
 
 After the completed connectivity tests:
 
-1. Complete the revised Message-ID key configuration in the existing
+1. Complete the SourceMessageID-only configuration in the existing
    registration-only intake, then durable answer/feedback/suppression records.
 2. Separately establish real internal research scope, permitted source
    retrieval, document text extraction, provenance, and access-failure handling.
