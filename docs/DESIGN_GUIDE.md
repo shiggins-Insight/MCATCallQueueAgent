@@ -1,6 +1,6 @@
 # MCAT-AI Call Queue Agent: design and deployment guide
 
-Last updated: November 3, 2026.
+Last updated: November 4, 2026.
 
 ## Purpose and status
 
@@ -41,7 +41,7 @@ outputs were also inspected in the conversation. They are not an independent
 tenant audit. Do not repeat completed preflight tests merely because a new
 session lacks the earlier conversation.
 
-| Capability | Status as of November 3, 2026 |
+| Capability | Status as of November 4, 2026 |
 | --- | --- |
 | Existing group-chat selector | Initially absent; custom conversation ID worked. Chat subsequently appeared in the dropdown and was selected successfully. Either selection method must target the same recorded conversation. |
 | Manual posting flow | User reported successful Flow bot posting to the persistent group chat. |
@@ -55,8 +55,11 @@ session lacks the earlier conversation.
 | SharePoint to agent to Teams | Create item -> Get item -> agent -> Teams succeeded. Changing the stored passage from MAPLE-47 to CEDAR-82 changed the answer correctly. |
 | SharePoint-fed abstention repeat | Deferred at user request. Do NOT mark passed. Connector-only abstention had already passed. |
 | Document extraction, intranet search, public research | Not established by list-item retrieval or synthetic passage tests. |
-| Shared-mailbox read/internal snapshot send | Not established. |
-| Production intake, case schema, feedback, suppression | Not built/deployed. List-column setup was proposed but completion has not been reported. |
+| Shared-mailbox trigger | User reported successful When a new email arrives in a shared mailbox (V2) execution and Message Id output. Later apparent latency was traced to a test-subject/filter mismatch, not demonstrated trigger delay. |
+| Case-register columns and email registration | User confirmed columns added and an email registered with IntakeKey, source body, and other configured fields. |
+| IntakeKey unique constraint | Resubmitting the successful run produced the explicit duplicate-value error for IntakeKey. User confirmed no additional list item was created. |
+| Internal snapshot send | Not established. |
+| Production feedback, suppression, unrestricted intake | Not built/deployed. Mailbox intake remains test-subject-filtered; no AI generation or outgoing email in this flow. |
 
 ### Resume here: working resources
 
@@ -72,6 +75,7 @@ session lacks the earlier conversation.
 | Agent connection label reported during setup | MCAT-CopilotStudio-Steven-Test; final rebuilt-flow connection details not separately captured. A label does not determine permissions. |
 | Agent execution flow | MCAT - Agent execution test (displayed as MCAT Agent Execution Test in one screenshot) |
 | Separate storage test flow | MCAT - SharePoint connectivity test |
+| Mailbox registration flow | MCAT - Mailbox intake; test-subject filter must remain enabled until intake is ready. |
 | Teams destination | MCAT-AI Call Queue Agent; conversation ID in Confirmed decisions above |
 
 The SharePoint site is a subsite: use the Site Address above, not the list-view
@@ -363,16 +367,16 @@ consent blocks it. Do not publish raw outputs with personal data or tokens.
 Once one architect succeeds, run again with a fresh card and a different
 architect. One card is not intended to collect two independent submissions.
 
-## Immediate next creation: case register columns
+## Case register and registration-only intake
 
 The user chose to move on rather than repeat SharePoint-fed abstention. Resume
-with the case register, NOT agent creation or another connectivity cycle.
-The following instructions have been given, but column creation has NOT been
-confirmed. Inspect/ask before duplicating columns.
+with the existing intake flow, NOT agent creation or another connectivity
+cycle. User confirmed the starter columns added on November 4, 2026. Do not
+create duplicate columns.
 
 Use the existing records list. Keep **Title** for generated **CaseID**, not email
-subject. Add the following columns with exact names; leave new columns optional
-initially so existing synthetic test rows remain valid.
+subject. The starter columns were configured as optional so existing synthetic
+test rows remain valid.
 
 | Column | Type | Settings / purpose |
 | --- | --- | --- |
@@ -383,25 +387,76 @@ initially so existing synthetic test rows remain valid.
 | SourceMessageID | Multiple lines of text | Plain text; append changes off. Preserve original connector message identifier. |
 | SourceMailbox | Single line of text | Mailbox the message was read from. |
 | ReceivedAt | Date and time | Include time. |
+| IntakeKey | Single line of text | Enforce unique values enabled. Initially optional for existing test rows. See the revised key decision below. |
 
-These are starter fields, not a complete deduplication/schema implementation.
-Before automated intake, design an enforceable mailbox/message uniqueness
-mechanism, concurrency behavior, CaseID assignment, required-field validation,
-and explicit failure/reconciliation handling. A lookup-then-create check alone
-does not guarantee uniqueness under concurrent runs. Preserve full source
-identifiers and long text; do not silently truncate to fit column limits.
+The current registration flow reads the shared mailbox, captures Message Id
+in Compose **SourceMessageId**, generates **NewCaseId** using
+`concat('MCAT-', guid())`, and saves a NEW / EMAIL case. RequestText receives
+the trigger's full Body, not Body Preview. Outlook supplied HTML including
+formatting/signature; that is preserved, not misinterpreted as plain text.
+Keep full SourceMessageID in its multiple-lines field.
 
-After column setup, create a shared-mailbox intake flow that ONLY registers
-questions: read incoming mail, deduplicate, assign/persist CaseID, and save the
-case. No agent generation or outgoing email in that first intake increment.
-Mailbox permission and actual trigger behavior remain unverified. Keep
-versioned answers, evidence, and append-only feedback separate from RequestText.
+The successful replay test used the earlier prefixed key (lowercase mailbox,
+separator, and Message Id). SharePoint rejected the duplicate and created no
+new row. That proves the unique constraint, not implementation of the revised
+key decision below.
+
+### User-directed simplification: Message ID defines uniqueness
+
+On November 4, the user chose to remove the mailbox prefix and forego extra
+lookup/key-building steps for this single-mailbox beta. IntakeKey is now the
+existing indexed, unique storage column for **Message ID alone**, not a second
+business identity. Do not reintroduce a separate logical identifier, hash
+service, multi-column key, or mandatory pre-create lookup for this increment.
+
+User explicitly accepts that truncation collisions could prevent a case and
+response from being created. The collision probability is not measured; do
+not describe it as proven negligible. The earlier SourceMessageId example
+had 152 characters and fits without truncation.
+
+Do not rely on SharePoint to silently truncate oversized values. Configure the
+Create item **IntakeKey** field directly with this Power Automate expression:
+
+```text
+substring(outputs('SourceMessageId'), 0, min(length(outputs('SourceMessageId')), 255))
+```
+
+This deliberately caps only the uniqueness field. **SourceMessageID still
+preserves the complete original identifier** for provenance and troubleshooting.
+The column's unique constraint remains the concurrency backstop. Missing or
+invalid source IDs must fail visibly; do not substitute an empty key.
+
+The separate BuildIntakeKey action and oversize-key rejection are no longer
+needed. Keep the existing condition as a missing-ID guard only, using
+`not(empty(outputs('SourceMessageId')))`, and update its failure message to
+state that the message ID is missing. Keep NewCaseId/Create item in its True
+branch. If the earlier condition was not added, validate that the message ID
+is present before saving. Flow edits are manual and completion of this change
+has NOT been reported.
+
+Before testing replay with the revised key, migrate the existing prefixed test
+records: replace each IntakeKey with its corresponding complete SourceMessageID,
+capped using the same rule if necessary. Otherwise a replay would not match its
+old key. Do not overwrite source IDs, invent values, or delete unrelated cases.
+
+A duplicate or truncation collision may visibly fail Create item in this beta;
+it is not silently treated as success or proof of an identical email. Other
+storage failures remain failed too. Subsequent generation/posting must run only
+after successful persistence; do not generate an unrecorded answer as a
+workaround. Recovery/reconciliation remains separate backlog work.
+
+Keep the subject filter and registration-only scope: no agent generation or
+outgoing email in this intake increment. Subject/filter spelling must match;
+an earlier mismatch was fixed by the user, but the final exact filter string
+has not been captured. Keep versioned answers, evidence, and append-only
+feedback separate from RequestText.
 
 ## Sprint and backlog
 
 | Priority | Item | Status |
 | --- | --- | --- |
-| Current | Confirm/create case-register columns, then registration-only shared-mailbox intake. | Resume here next session; column completion unconfirmed. |
+| Current | Simplify the existing unique IntakeKey to Message ID alone, migrate prefixed test keys, and continue registration-only mailbox intake. | Columns, registration, and duplicate rejection confirmed. Revised key expression not yet confirmed in tenant. |
+| Later | RequestPlainText derived from preserved HTML; mailbox reconciliation and visible failure recovery. | Not implemented. Text conversion and signature handling are separate from preservation of the original request. |
 | Later | Internal-recipient directory enrichment for job title/department and explicit business-role mapping. | Backlog; requested November 3, 2026. Not implemented or tenant-tested; does not block current intake work. |
 
 ### Backlog: internal-recipient directory enrichment
@@ -434,19 +489,21 @@ Documented capability was reviewed November 3, 2026; tenant execution is unprove
 
 After the completed connectivity tests:
 
-1. Establish case-register schema and registration-only mailbox intake as
-   described above, then durable answer/feedback/suppression records.
+1. Complete the revised Message-ID key configuration in the existing
+   registration-only intake, then durable answer/feedback/suppression records.
 2. Separately establish real internal research scope, permitted source
    retrieval, document text extraction, provenance, and access-failure handling.
    The existing SharePoint synthetic-row path is not a research engine.
 3. Prove permitted public-source research and explicit source attribution.
-4. Verify mailbox read and internal snapshot-send permissions separately.
+4. Establish mailbox reconciliation, attachment/protected-message behavior,
+   and internal snapshot-send permissions separately. Trigger access is proven
+   by the reported test, not a guarantee of complete mailbox capture.
 5. Build durable schemas, idempotent intake, versioning, authenticated feedback,
    suppression, snapshots, error handling, and reconciliation incrementally.
 6. Implement typed-question intake and case-scoped follow-up separately.
 
 Unresolved inputs: practical research sources, working rebuilt-agent
-ID/schema/configuration capture, available capacity, mailbox intake rights,
+ID/schema/configuration capture, available capacity, production intake readiness,
 and snapshot sender permission. Environment and SharePoint site/list are now
 recorded above. Ask for one needed input at a time; never secrets.
 
